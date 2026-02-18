@@ -1,48 +1,30 @@
+#include "allocator.h"
 #include <stdio.h>
-#include <assert.h>
-#include <sys/mman.h>
 
-#define align4(x) (((x) + 3) & ~3)
-
-
-
-typedef struct Allocable {
-    struct Allocable* next;
-    size_t size;
-    int freed;
-} Allocable;
-
-void* allocate(size_t size){
-    size_t totalSize = sizeof(Allocable) + size;
-    Allocable* ptr = mmap(NULL, totalSize, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if(ptr == MAP_FAILED){
-        return NULL;
-    }
-
-    ptr->size = size;
-    ptr->next = NULL;
-
-    return (void*)(ptr + 1);
-}
-
-void freeAlloc(void* ptr){
-    Allocable* allocPtr = (Allocable*)ptr - 1;
-    munmap(ptr, allocPtr->size);
-}
-
-void* reallocate(void* ptr, size_t newSize){
-    assert(0  && "Not implemented yet");
-    return NULL;
-}
-
+/**
+ * Tests
+ */
 int main(){
-    int* ptr = allocate(20 * sizeof(int));
-    for(int i = 0; i < 20; i++){
-        ptr[i] = i;
-    }
-    for(int i = 0; i < 20; i++){
-        printf("%p\n", (void*)&ptr[i]);
-    }
-    freeAlloc(ptr);
+    // Example
+    int* a = alloc(10 * sizeof(int));
+    for(int i = 0; i < 10; i++) a[i] = i;
+    printf("alloc: a[5] = %d\n", a[5]);
+    int* c = alloc(8 * sizeof(int));
+    printf("reuse: c == a? %s\n", (void*)c == (void*)a ? "yes" : "no");
+
+    int* d = calloc(5, sizeof(int));
+    printf("calloc: d[0] = %d, d[4] = %d\n", d[0], d[4]);
+
+    d = realloc(d, 20 * sizeof(int));
+    printf("realloc: d[0] still = %d\n", d[0]);
+
+    int* e = realloc(NULL, sizeof(int));
+    *e = 42;
+    printf("realloc(NULL): %d\n", *e);
+
+    free(a);
+    free(c);
+    free(d);
+    free(e);
     return 0;
 }
