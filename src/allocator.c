@@ -1,6 +1,7 @@
 #include "allocator.h"
 /* mmap only on linux */
 #include <sys/mman.h>
+#include <stdint.h>
 
 #define align8(x) (((x) + 7) & ~7)
 #define ALLOCABLE_SIZE sizeof(struct Block)
@@ -15,7 +16,7 @@ typedef struct Block {
     struct Block* prev;
     size_t size;
     /* not an int because of 8 alignment */
-    size_t free;
+    size_t dealloc;
     /* pointer to the allocated block */
     void *ptr;
     char data[];
@@ -49,10 +50,10 @@ static int validAddress(void* ptr){
 }
 
 /**
- * @brief Merges a block with hist sucessor if both are free and from the same mmap() call.
+ * @brief Merges a block with hist sucessor if both are dealloc and from the same mmap() call.
  */
 static Block* fusion(Block* block){
-    if(block->next && block->next->free){
+    if(block->next && block->next->dealloc){
         /* 
         Because memory coming from different mmaps are not contiguous,
         fusion can only be when two blocks are from the same mmap().
@@ -74,7 +75,7 @@ static Block* fusion(Block* block){
  */
 static Block* findAlloc(Block** last, size_t size){
     Block* block = base;
-    while(block && !(block->free && block->size >= size)){
+    while(block && !(block->dealloc && block->size >= size)){
         *last = block;
         block = block->next;
     }
@@ -84,7 +85,7 @@ static Block* findAlloc(Block** last, size_t size){
 /**
  * @brief This function splits a chunk of memory into two parts: one part of the requested size,
  * and another part with the remaining size. The first part is marked as allocated,
- * and the second part is marked as free.
+ * and the second part is marked as dealloc.
  */
 static void splitBlock(Block* block, size_t size){
     Block* newBlock = (Block*)(block->data + size);
@@ -92,7 +93,7 @@ static void splitBlock(Block* block, size_t size){
     newBlock->next = block->next;
     newBlock->prev = block;
     newBlock->ptr = newBlock->data;
-    newBlock->free = 1;
+    newBlock->dealloc = 1;
     block->size = size;
     block->next = newBlock;
     if(newBlock->next){
@@ -118,7 +119,7 @@ static Block* extendHeap(Block* last, size_t size){
     block->next = NULL;
     block->prev = last;
     block->ptr = block->data;
-    block->free = 0;
+    block->dealloc = 0;
 
     if(last){
         last->next = block;
@@ -133,13 +134,19 @@ void* alloc(size_t size){
     Block *block, *last;
     size_t s;
     s = align8(size);
+    if(s < size){
+        return NULL;
+    }
+    if(s > SIZE_MAX - ALLOCABLE_SIZE){
+        return NULL;
+    }
     if (base) {
         last = base;
         block = findAlloc(&last, s);
         if (block) {
             if ((block->size - s) >= (ALLOCABLE_SIZE + 8))
                 splitBlock(block, s);
-            block->free = 0;
+            block->dealloc = 0;
         } else {
             block = extendHeap(last, s);
             if (!block)
@@ -155,15 +162,15 @@ void* alloc(size_t size){
 }
 
 /**
- * @brief This function marks a chunk of memory as free.
+ * @brief This function marks a chunk of memory as dealloc.
  * sbrk does provide all memory contiguously, but mmap does not,
- * so we cannot merge adjacent free chunks. Instead we just mark the chunk as free
+ * so we cannot merge adjacent dealloc chunks. Instead we just mark the chunk as dealloc
  * and leave it to be reused by future allocations. 
  */
-void free(void* ptr){
+void dealloc(void* ptr){
     if(validAddress(ptr)){
         Block* block = getBlock(ptr);
-        block->free = 1;
+        block->dealloc = 1;
         if(block->next){
             fusion(block);
         }
@@ -173,7 +180,10 @@ void free(void* ptr){
 /**
  * @brief allocates zero-initialized memory for an arr of elements.
  */
-void *calloc(size_t num, size_t size){
+void *calloc_(size_t num, size_t size){
+    if(num && size > SIZE_MAX / num){
+        return NULL;
+    }
     void *new = alloc(num * size);
     if(new){
         size_t s8 = align8(num * size) >> 3;
@@ -185,9 +195,9 @@ void *calloc(size_t num, size_t size){
 }
 
 /**
- * @brief Resices allocated memory to a new size.
+ * @brief Resizes allocated memory to a new size.
  */
-void* realloc(void* ptr, size_t size){
+void* ralloc(void* ptr, size_t size){
     if(!ptr){
         return alloc(size);
     }
@@ -199,7 +209,7 @@ void* realloc(void* ptr, size_t size){
                 splitBlock(block, s);
             }
         }else {
-            if(block->next && block->next->free &&
+            if(block->next && block->next->dealloc &&
                 (char*)block->data + block->size == (char*)block->next &&
                 block->size + ALLOCABLE_SIZE + block->next->size >= s){
                     fusion(block);
@@ -211,7 +221,7 @@ void* realloc(void* ptr, size_t size){
                     if(!newptr) return NULL;
                     Block* new = getBlock(newptr);
                     copyBlock(block, new);
-                    free(ptr);
+                    dealloc(ptr);
                     return newptr;
                 }
         }
@@ -223,10 +233,10 @@ void* realloc(void* ptr, size_t size){
 /**
  * @brief Resizes a block, freeing the original block if the new size cannot be allocated.
  */
-void* reallocf(void* ptr, size_t size){
-    void* newptr = realloc(ptr, size);
+void* rallocf(void* ptr, size_t size){
+    void* newptr = ralloc(ptr, size);
     if(!newptr){
-        free(ptr);
+        dealloc(ptr);
     }
     return newptr;
 }

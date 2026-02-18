@@ -1,5 +1,7 @@
 #include "allocator.h"
 #include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 
 /**
  * Tests
@@ -12,19 +14,28 @@ int main(){
     int* c = alloc(8 * sizeof(int));
     printf("reuse: c == a? %s\n", (void*)c == (void*)a ? "yes" : "no");
 
-    int* d = calloc(5, sizeof(int));
-    printf("calloc: d[0] = %d, d[4] = %d\n", d[0], d[4]);
+    int* d = calloc_(5, sizeof(int));
+    printf("calloc_: d[0] = %d, d[4] = %d\n", d[0], d[4]);
 
-    d = realloc(d, 20 * sizeof(int));
+    d = ralloc(d, 20 * sizeof(int));
     printf("realloc: d[0] still = %d\n", d[0]);
 
-    int* e = realloc(NULL, sizeof(int));
+    int* e = ralloc(NULL, sizeof(int));
     *e = 42;
     printf("realloc(NULL): %d\n", *e);
 
-    free(a);
-    free(c);
-    free(d);
-    free(e);
+    dealloc(a);
+    dealloc(c);
+    dealloc(d);
+    dealloc(e);
+
+    // edge case example
+    // should not allocate because of overflow, and return NULL instead of crashing
+    char *buf = alloc(SIZE_MAX);
+    printf("alloc(SIZE_MAX): %s\n", buf ? "BUG" : "NULL");
+
+    int *data = calloc_(SIZE_MAX / 2, 4);
+    printf("calloc_(overflow): %s\n", data ? "BUG" : "NULL");
+
     return 0;
 }
