@@ -1,2 +1,6 @@
 output*.*
 output
+docs/
+post.md
+test
+test.c

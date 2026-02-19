@@ -107,7 +107,9 @@ static void splitBlock(Block* block, size_t size){
  */
 static Block* extendHeap(Block* last, size_t size){
     Block* block;
-    block = mmap(NULL, ALLOCABLE_SIZE + size,
+    size_t total =  size + ALLOCABLE_SIZE;
+    size_t pages = (total + 4095) & ~4095;
+    block = mmap(NULL, pages,
                 PROT_READ | PROT_WRITE,
                 MAP_ANONYMOUS | MAP_PRIVATE,
                 -1, 0);
@@ -115,7 +117,7 @@ static Block* extendHeap(Block* last, size_t size){
         return NULL;
     }
 
-    block->size = size;
+    block->size = pages - ALLOCABLE_SIZE;
     block->next = NULL;
     block->prev = last;
     block->ptr = block->data;
@@ -124,6 +126,11 @@ static Block* extendHeap(Block* last, size_t size){
     if(last){
         last->next = block;
     }
+
+    if(block->size - size >= ALLOCABLE_SIZE + 8){
+        splitBlock(block, size);
+    }
+
     return block;
 }
 
